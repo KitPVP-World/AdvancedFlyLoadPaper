@@ -15,6 +15,7 @@ import com.infernalsuite.aswm.api.loaders.SlimeLoader;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Main class of the SWM API. From here, you can load
@@ -81,7 +82,7 @@ public interface SlimePlugin {
      * @param world {@link SlimeWorld} world to be added to the server's world list
      * @return Returns a slime world representing a live minecraft world
      */
-    default SlimeWorld loadWorld(SlimeWorld world) throws UnknownWorldException, WorldLockedException, IOException {
+    default SlimeWorld loadWorld(SlimeWorld world) throws WorldLockedException, UnknownWorldException, IOException {
         return loadWorld(world, false);
     }
 
@@ -90,10 +91,32 @@ public interface SlimePlugin {
      * adds it to the server's world list.
      *
      * @param world {@link SlimeWorld} world to be added to the server's world list
-     * @param callWorldLoadEvent Whether or not to call {@link org.bukkit.event.world.WorldLoadEvent}
      * @return Returns a slime world representing a live minecraft world
      */
-    SlimeWorld loadWorld(SlimeWorld world, boolean callWorldLoadEvent) throws UnknownWorldException, WorldLockedException, IOException;
+    default SlimeWorld loadWorld(SlimeWorld world, boolean callWorldLoadEvent) throws WorldLockedException, UnknownWorldException, IOException {
+        return asyncLoadWorld(world, callWorldLoadEvent, false).join();
+    }
+
+    /**
+     * Generates a Minecraft World from a {@link SlimeWorld} and
+     * adds it to the server's world list.
+     *
+     * @param world {@link SlimeWorld} world to be added to the server's world list
+     * @return Returns a slime world representing a live minecraft world
+     */
+    default CompletableFuture<SlimeWorld> asyncLoadWorld(SlimeWorld world, boolean asyncRegister) throws WorldLockedException, UnknownWorldException, IOException {
+        return asyncLoadWorld(world, false, asyncRegister);
+    }
+
+    /**
+     * Generates a Minecraft World from a {@link SlimeWorld} and
+     * adds it to the server's world list.
+     *
+     * @param world {@link SlimeWorld} world to be added to the server's world list
+     * @param callWorldLoadEvent Whether to call {@link org.bukkit.event.world.WorldLoadEvent}
+     * @return Returns a slime world representing a live minecraft world
+     */
+    CompletableFuture<SlimeWorld> asyncLoadWorld(SlimeWorld world, boolean callWorldLoadEvent, boolean asyncRegister) throws WorldLockedException, UnknownWorldException, IOException;
 
     /**
      * Migrates a {@link SlimeWorld} to another datasource.

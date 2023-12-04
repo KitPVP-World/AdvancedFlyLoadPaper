@@ -94,13 +94,13 @@ public class CreateWorldCmd implements Subcommand {
                     SlimePropertyMap propertyMap = worldData.toPropertyMap();
                     SlimeWorld slimeWorld = SWMPlugin.getInstance().createEmptyWorld(loader, worldName, false, propertyMap);
 
-                    Bukkit.getScheduler().runTask(SWMPlugin.getInstance(), () -> {
-                        try {
-                            SWMPlugin.getInstance().loadWorld(slimeWorld, true);
-
-                            // Bedrock block
-                            Location location = new Location(Bukkit.getWorld(worldName), 0, 61, 0);
-                            location.getBlock().setType(Material.BEDROCK);
+                    try {
+                        SWMPlugin.getInstance().asyncLoadWorld(slimeWorld, true).thenRun(() -> {
+                            Bukkit.getScheduler().runTask(SWMPlugin.getInstance(), () -> {
+                                // Bedrock block
+                                Location location = new Location(Bukkit.getWorld(worldName), 0, 61, 0);
+                                location.getBlock().setType(Material.BEDROCK);
+                            });
 
                             // Config
                             config.getWorlds().put(worldName, worldData);
@@ -108,13 +108,13 @@ public class CreateWorldCmd implements Subcommand {
 
                             sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.GREEN + "World " + ChatColor.YELLOW + worldName
                                     + ChatColor.GREEN + " created in " + (System.currentTimeMillis() - start) + "ms!");
-                        } catch (IllegalArgumentException ex) {
-                            sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to create world " + worldName + ": " + ex.getMessage() + ".");
-                        } catch(WorldLockedException | UnknownWorldException | IOException exception) {
-                            sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to create world " + worldName + ": " + exception.getMessage() + ".");
-                            SWMPlugin.getInstance().getLogger().info("Failed to load world " + worldName + ": " + exception.getMessage());
-                        }
-                    });
+                        }).join();
+                    } catch (IllegalArgumentException ex) {
+                        sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to create world " + worldName + ": " + ex.getMessage() + ".");
+                    } catch(WorldLockedException | UnknownWorldException | IOException exception) {
+                        sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to create world " + worldName + ": " + exception.getMessage() + ".");
+                        SWMPlugin.getInstance().getLogger().info("Failed to load world " + worldName + ": " + exception.getMessage());
+                    }
                 } catch (WorldAlreadyExistsException ex) {
                     sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to create world " + worldName +
                             ": world already exists (using data source '" + dataSource + "').");

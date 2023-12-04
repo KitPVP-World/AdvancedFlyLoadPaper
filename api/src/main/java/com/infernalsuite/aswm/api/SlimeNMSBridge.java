@@ -7,6 +7,7 @@ import org.bukkit.World;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 @ApiStatus.Internal
 public interface SlimeNMSBridge {
@@ -20,7 +21,7 @@ public interface SlimeNMSBridge {
 
     void setDefaultWorlds(SlimeWorld normalWorld, SlimeWorld netherWorld, SlimeWorld endWorld) throws IOException;
 
-    SlimeWorldInstance loadInstance(SlimeWorld slimeWorld);
+    CompletableFuture<SlimeWorldInstance> loadInstance(SlimeWorld slimeWorld, boolean asyncRegister);
 
     SlimeWorldInstance getInstance(World world);
 

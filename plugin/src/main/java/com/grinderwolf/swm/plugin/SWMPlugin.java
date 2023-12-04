@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SWMPlugin extends JavaPlugin implements SlimePlugin, Listener {
@@ -135,7 +136,9 @@ public class SWMPlugin extends JavaPlugin implements SlimePlugin, Listener {
                 .filter(slimeWorld -> Objects.isNull(Bukkit.getWorld(slimeWorld.getName())))
                 .forEach(slimeWorld -> {
                     try {
+                        long startTime = System.currentTimeMillis();
                         loadWorld(slimeWorld, true);
+                        Logging.info("Loaded world " + slimeWorld.getName() + " in " + (System.currentTimeMillis() - startTime) + "ms");
                     } catch (UnknownWorldException | WorldLockedException | IOException exception) {
                         Logging.error("Failed to load world: " + slimeWorld.getName());
                         exception.printStackTrace();
@@ -312,22 +315,39 @@ public class SWMPlugin extends JavaPlugin implements SlimePlugin, Listener {
     }
 
     @Override
-    public SlimeWorld loadWorld(SlimeWorld slimeWorld, boolean callWorldLoadEvent) throws WorldLockedException, UnknownWorldException, IOException {
+    public CompletableFuture<SlimeWorld> asyncLoadWorld(SlimeWorld slimeWorld, boolean callWorldLoadEvent, boolean async) throws WorldLockedException, UnknownWorldException, IOException {
         Objects.requireNonNull(slimeWorld, "SlimeWorld cannot be null");
 
         if (!slimeWorld.isReadOnly() && slimeWorld.getLoader() != null) {
             slimeWorld.getLoader().acquireLock(slimeWorld.getName());
         }
-        SlimeWorldInstance instance = BRIDGE_INSTANCE.loadInstance(slimeWorld);
-        SlimeWorld mirror = instance.getSlimeWorldMirror();
 
+        var future = BRIDGE_INSTANCE.loadInstance(slimeWorld, async);
+        if(async) {
+            return future.thenApply((instance) -> {
+                SlimeWorld mirror = instance.getSlimeWorldMirror();
+
+                Bukkit.getScheduler().runTask(this, () -> callEvents(mirror, instance, callWorldLoadEvent));
+                registerWorld(mirror);
+
+                return mirror;
+            });
+        } {
+            var instance = future.join();
+            SlimeWorld mirror = instance.getSlimeWorldMirror();
+
+            callEvents(mirror, instance, callWorldLoadEvent);
+            registerWorld(mirror);
+
+            return CompletableFuture.completedFuture(mirror);
+        }
+    }
+
+    private void callEvents(SlimeWorld mirror, SlimeWorldInstance instance, boolean callWorldLoadEvent) {
         Bukkit.getPluginManager().callEvent(new LoadSlimeWorldEvent(mirror));
         if (callWorldLoadEvent) {
             Bukkit.getPluginManager().callEvent(new WorldLoadEvent(instance.getBukkitWorld()));
         }
-
-        registerWorld(mirror);
-        return mirror;
     }
 
     @Override

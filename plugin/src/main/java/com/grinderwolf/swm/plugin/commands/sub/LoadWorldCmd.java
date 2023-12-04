@@ -84,22 +84,16 @@ public class LoadWorldCmd implements Subcommand {
                     }
 
                     SlimeWorld slimeWorld = SWMPlugin.getInstance().loadWorld(loader, worldName, worldData.isReadOnly(), worldData.toPropertyMap());
-                    Bukkit.getScheduler().runTask(SWMPlugin.getInstance(), () -> {
-                        try {
-                            SWMPlugin.getInstance().loadWorld(slimeWorld, true);
-                        } catch (IllegalArgumentException ex) {
-                            sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to generate world " + worldName + ": " + ex.getMessage() + ".");
-
-                            return;
-                        } catch(WorldLockedException | UnknownWorldException | IOException exception) {
-                            SWMPlugin.getInstance().getLogger().info("Failed to load world " + worldName + ": " + exception.getMessage());
-                            sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to load world " + worldName + ": " + exception.getMessage() + ".");
-                            return;
-                        }
-
-                        sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.GREEN + "World " + ChatColor.YELLOW + worldName
-                                + ChatColor.GREEN + " loaded and generated in " + (System.currentTimeMillis() - start) + "ms!");
-                    });
+                    try {
+                        SWMPlugin.getInstance().asyncLoadWorld(slimeWorld, true, true).thenRun(() ->
+                                sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.GREEN + "World " + ChatColor.YELLOW + worldName
+                                        + ChatColor.GREEN + " loaded and generated in " + (System.currentTimeMillis() - start) + "ms!")).join();
+                    } catch (IllegalArgumentException ex) {
+                        sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to generate world " + worldName + ": " + ex.getMessage() + ".");
+                    } catch (WorldLockedException | UnknownWorldException | IOException exception) {
+                        SWMPlugin.getInstance().getLogger().info("Failed to load world " + worldName + ": " + exception.getMessage());
+                        sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to load world " + worldName + ": " + exception.getMessage() + ".");
+                    }
                 } catch (CorruptedWorldException ex) {
                     if (!(sender instanceof ConsoleCommandSender)) {
                         sender.sendMessage(Logging.COMMAND_PREFIX + ChatColor.RED + "Failed to load world " + worldName +
