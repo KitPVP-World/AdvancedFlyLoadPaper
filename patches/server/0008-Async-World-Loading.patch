@@ -1,0 +1,180 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NotStevy <notstevy@ultrabuildmc.de>
+Date: Mon, 4 Dec 2023 19:04:01 +0100
+Subject: [PATCH] Async World Loading
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 1b762e6442797a4bcb7d15083e8faedd480a0122..cd1221f9981c8a7368d2f4039a509fcbb0059004 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -173,6 +173,16 @@ fun TaskContainer.registerRunTask(
+         args("-add-plugin=${testPluginJar.get().asFile.absolutePath}")
+     }
+ 
++    if (rootProject.childProjects["plugin"] != null) {
++        val slimePluginJar = rootProject.project(":plugin").tasks.shadowJar.flatMap { it.archiveFile }
++        inputs.file(slimePluginJar)
++        copy {
++            from(slimePluginJar.get().asFile)
++            into(workingDir.resolve("plugins"))
++        }
++    }
++
++
+     args("--nogui")
+     systemProperty("net.kyori.adventure.text.warnWhenLegacyFormattingDetected", true)
+     if (providers.gradleProperty("paper.runDisableWatchdog").getOrElse("false") == "true") {
+diff --git a/src/main/java/com/infernalsuite/aswm/SlimeNMSBridgeImpl.java b/src/main/java/com/infernalsuite/aswm/SlimeNMSBridgeImpl.java
+index 97a3c0401d1bcf34d8022da5163b8169a66fd5b3..cf983cf82c13109ab1a28336c2f2cb1bfb3744f9 100644
+--- a/src/main/java/com/infernalsuite/aswm/SlimeNMSBridgeImpl.java
++++ b/src/main/java/com/infernalsuite/aswm/SlimeNMSBridgeImpl.java
+@@ -8,7 +8,6 @@ import com.infernalsuite.aswm.level.SlimeBootstrap;
+ import com.infernalsuite.aswm.level.SlimeInMemoryWorld;
+ import com.infernalsuite.aswm.level.SlimeLevelInstance;
+ import com.mojang.serialization.Lifecycle;
+-import net.kyori.adventure.util.Services;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.core.registries.Registries;
+ import net.minecraft.nbt.CompoundTag;
+@@ -34,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
+ 
+ import java.io.IOException;
+ import java.util.Locale;
++import java.util.concurrent.CompletableFuture;
+ 
+ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+ 
+@@ -57,7 +57,7 @@ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+ 
+         // See MinecraftServer loading logic
+         // Some stuff is needed when loading overworld world
+-        SlimeLevelInstance instance = ((SlimeInMemoryWorld) this.loadInstance(defaultWorld, Level.OVERWORLD)).getInstance();
++        SlimeLevelInstance instance = ((SlimeInMemoryWorld) this.loadInstance(defaultWorld, Level.OVERWORLD, false).join()).getInstance();
+         DimensionDataStorage worldpersistentdata = instance.getDataStorage();
+         instance.getCraftServer().scoreboardManager = new org.bukkit.craftbukkit.scoreboard.CraftScoreboardManager(instance.getServer(), instance.getScoreboard());
+         instance.getServer().commandStorage = new CommandStorage(worldpersistentdata);
+@@ -71,7 +71,7 @@ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+             return false;
+         }
+ 
+-        this.loadInstance(defaultNetherWorld, Level.NETHER);
++        this.loadInstance(defaultNetherWorld, Level.NETHER, false);
+ 
+         return true;
+     }
+@@ -82,7 +82,7 @@ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+             return false;
+         }
+ 
+-        this.loadInstance(defaultEndWorld, Level.END);
++        this.loadInstance(defaultEndWorld, Level.END, false);
+ 
+         return true;
+     }
+@@ -107,20 +107,32 @@ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+     }
+ 
+     @Override
+-    public SlimeWorldInstance loadInstance(SlimeWorld slimeWorld) {
+-        return this.loadInstance(slimeWorld, null);
++    public CompletableFuture<SlimeWorldInstance> loadInstance(SlimeWorld slimeWorld, boolean asyncRegister) {
++        return this.loadInstance(slimeWorld, null, asyncRegister);
+     }
+ 
+-    public SlimeWorldInstance loadInstance(SlimeWorld slimeWorld, @Nullable ResourceKey<Level> dimensionOverride) {
++    public CompletableFuture<SlimeWorldInstance> loadInstance(SlimeWorld slimeWorld, @Nullable ResourceKey<Level> dimensionOverride, boolean asyncRegister) {
+         String worldName = slimeWorld.getName();
+ 
+         if (Bukkit.getWorld(worldName) != null) {
+             throw new IllegalArgumentException("World " + worldName + " already exists! Maybe it's an outdated SlimeWorld object?");
+         }
+ 
+-        SlimeLevelInstance server = createCustomWorld(slimeWorld, dimensionOverride);
+-        registerWorld(server);
+-        return server.getSlimeInstance();
++        var future = createCustomWorld(slimeWorld, dimensionOverride);
++        if(asyncRegister) {
++            return future.thenApply((server) -> {
++                MinecraftServer.getServer().execute(() -> {
++                    registerWorld(server);
++                    System.out.println("Registered");
++                });
++
++                return server.getSlimeInstance();
++            });
++        } else {
++            var server = future.join();
++            registerWorld(server);
++            return CompletableFuture.completedFuture(server.getSlimeInstance());
++        }
+     }
+ 
+     @Override
+@@ -152,39 +164,41 @@ public class SlimeNMSBridgeImpl implements SlimeNMSBridge {
+         mcServer.addLevel(server);
+     }
+ 
+-    private SlimeLevelInstance createCustomWorld(SlimeWorld world, @Nullable ResourceKey<Level> dimensionOverride) {
+-        SlimeBootstrap bootstrap = new SlimeBootstrap(world);
+-        String worldName = world.getName();
++    private CompletableFuture<SlimeLevelInstance> createCustomWorld(SlimeWorld world, @Nullable ResourceKey<Level> dimensionOverride) {
++        return CompletableFuture.supplyAsync(() -> {
++            SlimeBootstrap bootstrap = new SlimeBootstrap(world);
++            String worldName = world.getName();
+ 
+-        PrimaryLevelData worldDataServer = createWorldData(world);
+-        World.Environment environment = getEnvironment(world);
+-        ResourceKey<LevelStem> dimension = switch (environment) {
+-            case NORMAL -> LevelStem.OVERWORLD;
+-            case NETHER -> LevelStem.NETHER;
+-            case THE_END -> LevelStem.END;
+-            default -> throw new IllegalArgumentException("Unknown dimension supplied");
+-        };
++            PrimaryLevelData worldDataServer = createWorldData(world);
++            World.Environment environment = getEnvironment(world);
++            ResourceKey<LevelStem> dimension = switch (environment) {
++                case NORMAL -> LevelStem.OVERWORLD;
++                case NETHER -> LevelStem.NETHER;
++                case THE_END -> LevelStem.END;
++                default -> throw new IllegalArgumentException("Unknown dimension supplied");
++            };
+ 
+-        ResourceKey<Level> worldKey = dimensionOverride == null ? ResourceKey.create(Registries.DIMENSION, new ResourceLocation(worldName.toLowerCase(Locale.ENGLISH))) : dimensionOverride;
+-        LevelStem stem = MinecraftServer.getServer().registries().compositeAccess().registryOrThrow(Registries.LEVEL_STEM).get(dimension);
++            ResourceKey<Level> worldKey = dimensionOverride == null ? ResourceKey.create(Registries.DIMENSION, new ResourceLocation(worldName.toLowerCase(Locale.ENGLISH))) : dimensionOverride;
++            LevelStem stem = MinecraftServer.getServer().registries().compositeAccess().registryOrThrow(Registries.LEVEL_STEM).get(dimension);
+ 
+-        SlimeLevelInstance level;
++            SlimeLevelInstance level;
+ 
+-        try {
+-            level = new SlimeLevelInstance(bootstrap, worldDataServer, worldKey, dimension, stem, environment);
+-        } catch (IOException ex) {
+-            throw new RuntimeException(ex); // TODO do something better with this?
+-        }
++            try {
++                level = new SlimeLevelInstance(bootstrap, worldDataServer, worldKey, dimension, stem, environment);
++            } catch (IOException ex) {
++                throw new RuntimeException(ex); // TODO do something better with this?
++            }
+ 
+-        // level.setReady(true);
+-        level.setSpawnSettings(world.getPropertyMap().getValue(SlimeProperties.ALLOW_MONSTERS), world.getPropertyMap().getValue(SlimeProperties.ALLOW_ANIMALS));
++            // level.setReady(true);
++            level.setSpawnSettings(world.getPropertyMap().getValue(SlimeProperties.ALLOW_MONSTERS), world.getPropertyMap().getValue(SlimeProperties.ALLOW_ANIMALS));
+ 
+-        var nmsExtraData = (CompoundTag) Converter.convertTag(world.getExtraData());
++            var nmsExtraData = (CompoundTag) Converter.convertTag(world.getExtraData());
+ 
+-        //Attempt to read PDC
+-        if (nmsExtraData.get("BukkitValues") != null) level.getWorld().readBukkitValues(nmsExtraData.get("BukkitValues"));
++            //Attempt to read PDC
++            if (nmsExtraData.get("BukkitValues") != null) level.getWorld().readBukkitValues(nmsExtraData.get("BukkitValues"));
+ 
+-        return level;
++            return level;
++        });
+     }
+ 
+     private World.Environment getEnvironment(SlimeWorld world) {
