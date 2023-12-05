@@ -74,21 +74,17 @@ profiles {
                     }
                 }
                 repositories {
-                    maven {
-                        name = "infernalsuite"
-                        url = uri("https://repo.infernalsuite.com/repository/maven-snapshots/")
-                        credentials {
-                            username = project.property("ISUsername") as String?
-                            password = project.property("ISPassword") as String?
-                        }
+                    maven("https://maven.kitpvp.world/public-snapshots/") {
+                        name = "kitpvp"
+                        credentials(PasswordCredentials::class)
                     }
                 }
             }
 
-            signing {
+            /*signing {
                 useGpgCmd()
                 sign(publishing.publications["maven"])
-            }
+            }*/
         }
     }
 }
