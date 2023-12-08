@@ -1,0 +1,39 @@
+qFrom 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NotStevy <notstevy@ultrabuildmc.de>
+Date: Fri, 8 Dec 2023 20:59:12 +0100
+Subject: [PATCH] Fix async overflow error (no java exception)
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 743f34651d58f866bb7bbd050b0ed0d60302c6df..a2acf212a4927021d96b6e3241f8aa1ed291a28a 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -18,10 +18,13 @@ import java.util.function.BooleanSupplier;
+ import java.util.function.Consumer;
+ import java.util.function.Supplier;
+ import javax.annotation.Nullable;
++
++import io.papermc.paper.util.TickThread;
+ import net.minecraft.Util;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.network.protocol.Packet;
++import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.level.progress.ChunkProgressListener;
+ import net.minecraft.util.VisibleForDebug;
+ import net.minecraft.util.profiling.ProfilerFiller;
+@@ -174,7 +177,13 @@ public class ServerChunkCache extends ChunkSource {
+         // ASWM end
+         this.level = world;
+         this.mainThreadProcessor = new ServerChunkCache.MainThreadExecutor(world);
+-        this.mainThread = Thread.currentThread();
++        // KitPvP Start - Fix async overflow & add thread check
++        // this.mainThread = Thread.currentThread();
++        this.mainThread = MinecraftServer.getServer().serverThread;
++        if(!(this.mainThread instanceof TickThread)) {
++            throw new IllegalStateException("Illegal main thread!");
++        }
++        // KitPvP End
+         File file = session.getDimensionPath(world.dimension()).resolve("data").toFile();
+ 
+         file.mkdirs();
