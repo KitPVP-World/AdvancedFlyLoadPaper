@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: NotStevy <notstevy@ultrabuildmc.de>
+Date: Sun, 3 Mar 2024 20:36:42 +0100
+Subject: [PATCH] Discord webhook error log integration
+
+
+diff --git a/src/main/resources/log4j2.xml b/src/main/resources/log4j2.xml
+index 675cd61221e807aadf28322b46c3daa1370241b5..7f5f7b76d91db36be0ebfc61ab9a382a7f6d752d 100644
+--- a/src/main/resources/log4j2.xml
++++ b/src/main/resources/log4j2.xml
+@@ -29,6 +29,10 @@
+             </Policies>
+             <DefaultRolloverStrategy max="1000"/>
+         </RollingRandomAccessFile>
++        <!-- kitpvp -->
++        <Queue name="DiscordAppender">
++            <PatternLayout pattern="[%logger] [%d{HH:mm:ss} %level]: %stripAnsi{%msg}%n%xEx{full}" />
++        </Queue>
+         <Async name="Async">
+             <AppenderRef ref="rewrite"/>
+         </Async>
+@@ -41,6 +45,7 @@
+             <AppenderRef ref="File"/>
+             <AppenderRef ref="TerminalConsole" level="info"/>
+             <AppenderRef ref="ServerGuiConsole" level="info"/>
++            <AppenderRef ref="DiscordAppender" level="warn"/> <!-- kitpvp -->
+         </Rewrite>
+     </Appenders>
+     <Loggers>
