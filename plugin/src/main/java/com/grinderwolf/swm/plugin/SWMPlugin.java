@@ -7,7 +7,6 @@ import com.grinderwolf.swm.plugin.commands.CommandManager;
 import com.grinderwolf.swm.plugin.config.ConfigManager;
 import com.grinderwolf.swm.plugin.config.WorldData;
 import com.grinderwolf.swm.plugin.config.WorldsConfig;
-import com.grinderwolf.swm.plugin.listeners.WorldUnlocker;
 import com.grinderwolf.swm.plugin.loaders.LoaderUtils;
 import com.grinderwolf.swm.plugin.log.Logging;
 import com.infernalsuite.aswm.api.SlimeNMSBridge;
@@ -146,7 +145,6 @@ public class SWMPlugin extends JavaPlugin implements SlimePlugin, Listener {
                 });
 
         this.getServer().getPluginManager().registerEvents(this, this);
-        this.getServer().getPluginManager().registerEvents(new WorldUnlocker(), this);
         //loadedWorlds.clear // - Commented out because not sure why this would be cleared. Needs checking
     }
 
@@ -257,12 +255,14 @@ public class SWMPlugin extends JavaPlugin implements SlimePlugin, Listener {
 
         SlimeWorld slimeWorld = SlimeWorldReaderRegistry.readWorld(loader, worldName, serializedWorld, propertyMap, readOnly);
         Logging.info("Applying datafixers for " + worldName + ".");
-        SlimeNMSBridge.instance().applyDataFixers(slimeWorld);
+        SlimeWorld dataFixed = SlimeNMSBridge.instance().applyDataFixers(slimeWorld);
+
+        if (!readOnly) loader.saveWorld(worldName, SlimeSerializer.serialize(dataFixed)); // Write dataFixed world back to loader
 
         Logging.info("World " + worldName + " loaded in " + (System.currentTimeMillis() - start) + "ms.");
 
-        registerWorld(slimeWorld);
-        return slimeWorld;
+        registerWorld(dataFixed);
+        return dataFixed;
     }
 
     @Override
